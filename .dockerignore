@@ -1,0 +1,16 @@
+node_modules
+.next
+out
+dist
+.git
+.gitignore
+.env
+.env.local
+.env*.local
+.vercel
+npm-debug.log*
+.DS_Store
+README.md
+Dockerfile
+.dockerignore
+docker-compose.yml

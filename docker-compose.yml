@@ -1,0 +1,16 @@
+services:
+  web:
+    build:
+      context: .
+      args:
+        NODE_VERSION: 24-alpine
+    image: fcp-app:latest
+    container_name: fcp-app
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+    # Uncomment when you wire the chatbot to a real LLM
+    # env_file:
+    #   - .env.local
