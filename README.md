@@ -63,6 +63,26 @@ Open [http://localhost:3000](http://localhost:3000) in your browser. To preview 
 
 ---
 
+## Testing on mobile (HTTPS for geolocation)
+
+The app uses the browser Geolocation API (`navigator.geolocation`), which browsers only allow on **secure contexts** — `https://` or `localhost`. Visiting `http://<your-mac-ip>:3000` from your phone will load the page but **silently deny location access** with no useful error.
+
+To test geolocation on a real device, expose the dev server through an HTTPS tunnel using Cloudflare's free quick tunnel:
+
+```bash
+brew install cloudflared    # macOS, one-time
+npm run dev                 # in one terminal
+npm run tunnel              # in another — prints an https://*.trycloudflare.com URL
+```
+
+Open the printed `https://...trycloudflare.com` URL on your phone. Geolocation will prompt and work normally.
+
+> The quick tunnel URL is public for as long as `npm run tunnel` is running and changes every restart. Fine for local testing; don't share it broadly.
+
+For Windows / Linux, install `cloudflared` from [the official docs](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/) and run `npm run tunnel` the same way.
+
+---
+
 ## Running with Docker (Node 24)
 
 A multi-stage `Dockerfile` is included. It builds the app on `node:24-alpine` and runs the Next.js standalone server as a non-root user. Final image is small (~150 MB) and starts in under a second.
