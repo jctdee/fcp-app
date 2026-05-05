@@ -101,7 +101,7 @@ export default function StationList({
           Find chargers near you
         </h2>
         <p className="mx-auto mt-1.5 max-w-sm text-sm text-ink-400">
-          Allow location access and we'll show the closest EV chargers, sorted
+          Allow location access and we&apos;ll show the closest EV chargers, sorted
           by distance.
         </p>
 

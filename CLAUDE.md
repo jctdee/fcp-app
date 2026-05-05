@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Pluggo is a hackathon prototype: a mobile-first Next.js 14 (App Router) app that helps EV drivers in Metro Manila find the nearest charging station, with a floating "Pluggobot" chat panel. There is no test suite. The chatbot is currently rule-based + an echo API stub; the real LLM backend is not wired up yet (see "Wiring the chatbot" below).
+Pluggo is a hackathon prototype: a mobile-first Next.js 14 (App Router) app that helps EV drivers in Metro Manila find the nearest charging station, with a floating "Pluggobot" chat panel. The chatbot is currently rule-based + an echo API stub; the real LLM backend is not wired up yet (see "Wiring the chatbot" below). Pure TS helpers for the upcoming Claude wiring live in `lib/chatbot/`. Hackathon test scope: tests target the `/api/chat` route handler (the chatbot itself), not per-helper unit logic.
 
 ## Commands
 
@@ -14,6 +14,8 @@ Pluggo is a hackathon prototype: a mobile-first Next.js 14 (App Router) app that
 | `npm run build` | Production build. Outputs `.next/standalone` (see `next.config.mjs`). |
 | `npm run start` | Run the production build. |
 | `npm run lint` | Next/ESLint. |
+| `npm test` | Run vitest once. Targets `/api/chat` route tests (mocked Anthropic SDK). |
+| `npm run test:watch` | Vitest in watch mode. |
 | `docker compose up --build` | Full prod-style container at `localhost:3000`. |
 
 Auto-deploys to Vercel on push to `main`. PRs get preview URLs automatically.
@@ -58,6 +60,18 @@ When extending the bot, prefer adding a branch in `classifyIntent` over expandin
 ### Chat API
 
 `app/api/chat/route.ts` runs on the Edge runtime (`export const runtime = 'edge'`) and currently echoes the message. The plan recorded in auto-memory is to wire this to the **Claude API** (not AWS Lex) using `@anthropic-ai/sdk` with tool use, streaming the response. Keep the request shape `{ message: string }` and the response shape `{ reply: string }` (or extend it with streaming chunks) so `Chatbot.handleSubmit` doesn't need to change. The Edge runtime is required to avoid Vercel Hobby's 10s function timeout on streaming responses; the `ANTHROPIC_API_KEY` env var is set in Vercel.
+
+### `lib/chatbot/` — pure TS helpers for the Claude wiring
+
+These modules encode the safety invariants for the future `/api/chat` route. They are pure functions (no React, no Edge primitives, no network) and are TypeScript-checked at build time. The route will compose them rather than redefining validation, sanitization, or wrapping logic. Coverage is at the route level, not per-helper — keeping tests focused on the actual chatbot behavior for the hackathon.
+
+- `wrap.ts` — JSON-encodes the untrusted client payload as a single user-message string for Claude (no XML delimiters, so attacks like `</driver_message>` cannot break out).
+- `validate.ts` — runtime validator for the request body. Hard-400s missing/empty `driverMessage` or non-object body; soft-coerces everything else.
+- `overrides.ts` — `sanitizeOverrides` (server) whitelists the four mutable demo-override fields; `normalizeOverridesForWire` (client) maps `waitMinutes: undefined` → `null` so JSON.stringify preserves the "clear" signal.
+- `station-resolver.ts`, `find-stations.ts`, `directions.ts` — server-side tool implementations; all canonical station facts come from `lib/stations.ts::STATIONS`, never from the client.
+- `tool-input.ts` — validates *model* tool inputs as untrusted (clamps `limit`, validates enums, etc.).
+- `primary-station.ts` — `PrimaryStationTracker` enforces "first valid result wins" so Maps + Waze buttons attach deterministically.
+- `view.ts` — merges canonical stations with sanitized overrides + computes distance.
 
 ## Conventions worth knowing
 
