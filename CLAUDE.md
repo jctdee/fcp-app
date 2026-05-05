@@ -85,3 +85,12 @@ These modules encode the safety invariants for the future `/api/chat` route. The
 - **No `any`.** Use proper types, generics, or `unknown` with a type guard. If a Web API isn't in `lib.dom.d.ts` (e.g. `webkitSpeechRecognition`), declare a minimal local interface — see `lib/useSpeechRecognition.ts` for the pattern.
 - **No `as SomeType` casting.** Use type guards or runtime validation. Casting hides bugs the compiler would otherwise catch.
 - **Guard clauses over nested `if`/`else`** in loops and handlers. The `Chatbot.handleSubmit` pipeline is the canonical example — each step `return`s early on match rather than nesting the next step inside an `else`.
+
+## Test style (vitest)
+
+- **No `for`/`forEach` loops in test bodies.** They hide what's being parameterized and produce poor failure output (one assertion failure stops the whole test). Two acceptable replacements depending on shape:
+  - **Fixed table of cases** (e.g. "for each `rank_by` value, the result is sorted"): use `it.each` / `describe.each`. Each row becomes a discrete test with its own name and failure trace.
+  - **Invariant across runtime-collected data** (e.g. "every call to Claude must use Haiku 4.5"): use array-level matchers — `[...new Set(arr)]` for distinctness, `Math.min`/`Math.max` for bounds, or `expect(arr).toEqual(arr.map(() => matcher))` to assert every entry matches the same shape. The mismatched index shows up in the diff.
+- **Always assert the loop body actually ran.** When iterating over runtime-collected data (mock calls, accumulated events), check `expect(arr.length).toBeGreaterThan(0)` before iterating — otherwise an empty array passes vacuously and the test gives false confidence.
+- **Tests scope mirrors the source it covers.** Route tests live next to the route (`app/api/chat/route.test.ts`); helper tests live next to the helper (`lib/foo.test.ts`). Vitest's `include` glob picks both up.
+- **Mock at the network boundary, not below.** For `/api/chat`, mock `@anthropic-ai/sdk`'s `messages.create` once at the top of the test file. Don't mock individual helpers — exercise them through the route so the integration is real.
