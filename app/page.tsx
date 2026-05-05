@@ -7,7 +7,7 @@ export default function HomePage() {
         <div className="mx-auto flex max-w-2xl items-center justify-between">
           <div>
             <h1 className="flex items-center gap-1.5 text-lg font-extrabold text-white">
-              <span aria-hidden>⚡</span> DriverCharge
+              <span aria-hidden>⚡</span> Pluggo
             </h1>
             <p className="text-xs text-ink-400">
               Find your next EV charging stop

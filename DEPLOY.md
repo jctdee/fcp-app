@@ -1,4 +1,4 @@
-# Deploying fcp-app to Vercel
+# Deploying Pluggo to Vercel
 
 Step-by-step guide to publish this app on Vercel via GitHub. The free **Hobby** tier is plenty for the hackathon — no credits or payment required.
 
@@ -23,7 +23,7 @@ If you've already cloned an existing repo, skip ahead to step 2.
 
 ### 1a. Initialize git locally
 
-From inside the `fcp-app/` folder:
+From inside the `pluggo/` folder:
 
 ```bash
 git init
@@ -45,7 +45,7 @@ If those lines aren't there, add them before committing — you don't want to pu
 Go to [github.com/new](https://github.com/new):
 
 - **Owner**: your username (e.g. `jctdee`)
-- **Repository name**: `fcp-app`
+- **Repository name**: `pluggo`
 - **Visibility**: Public or Private (either works with Vercel)
 - **Do NOT** initialize with README / .gitignore / license — your local repo already has them and adding them here causes a merge conflict on first push.
 
@@ -56,7 +56,7 @@ Click **Create repository**. GitHub will then show a "push an existing repositor
 ```bash
 git add .
 git commit -m "Initial commit"
-git remote add origin https://github.com/jctdee/fcp-app.git
+git remote add origin https://github.com/jctdee/pluggo.git
 git push -u origin main
 ```
 
@@ -66,7 +66,7 @@ git push -u origin main
 - **GitHub CLI** — `brew install gh && gh auth login`, then push normally.
 - **SSH** — set up an SSH key with GitHub, then change the remote:
   ```bash
-  git remote set-url origin git@github.com:jctdee/fcp-app.git
+  git remote set-url origin git@github.com:jctdee/pluggo.git
   git push -u origin main
   ```
 
@@ -75,8 +75,8 @@ git push -u origin main
 ## 2. Import the repo into Vercel
 
 1. Go to [vercel.com/new](https://vercel.com/new).
-2. Click **"Import Git Repository"**. If this is your first time, Vercel asks to install its GitHub app — grant it access to either all repos or just `jctdee/fcp-app`.
-3. Find `fcp-app` in the list and click **Import**.
+2. Click **"Import Git Repository"**. If this is your first time, Vercel asks to install its GitHub app — grant it access to either all repos or just `jctdee/pluggo`.
+3. Find `pluggo` in the list and click **Import**.
 
 ---
 
@@ -97,7 +97,7 @@ Click **Deploy**.
 The first build takes about 1-3 minutes. When it finishes you'll get a URL like:
 
 ```
-https://fcp-app.vercel.app
+https://pluggo.vercel.app
 ```
 
 That's your live demo. Share it with judges.
@@ -152,7 +152,7 @@ OPENAI_API_KEY=sk-...
 
 In Vercel dashboard → **Settings → Domains** → "Add". You can:
 
-- Use a free `*.vercel.app` subdomain (e.g. `fcp-app.vercel.app`) — already yours.
+- Use a free `*.vercel.app` subdomain (e.g. `pluggo.vercel.app`) — already yours.
 - Point a domain you own. Vercel issues TLS certificates automatically.
 
 ---
@@ -185,7 +185,7 @@ Vercel defaults to Node 20+, which works fine. To pin a specific version, add th
 ## TL;DR
 
 ```
-github.com/jctdee/fcp-app  →  vercel.com/new  →  https://fcp-app.vercel.app
+github.com/jctdee/pluggo  →  vercel.com/new  →  https://pluggo.vercel.app
 ```
 
 Every `git push` redeploys the live site automatically.

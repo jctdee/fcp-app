@@ -301,7 +301,7 @@ export default function Chatbot({
         >
           <div className="flex items-center justify-between border-b border-ink-800 px-5 py-4">
             <div>
-              <p className="text-sm font-semibold text-white">ChargeBot</p>
+              <p className="text-sm font-semibold text-white">Pluggobot</p>
               <p className="text-xs text-ink-400">
                 {speech.listening
                   ? 'Listening…'

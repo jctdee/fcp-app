@@ -1,4 +1,4 @@
-# fcp-app
+# Pluggo
 
 A **mobile-first web app** built with Next.js 14, TypeScript, and Tailwind CSS. Includes a landing page and a floating chatbot that talks to a built-in API route. Designed to deploy to Vercel in one click.
 
@@ -7,7 +7,7 @@ A **mobile-first web app** built with Next.js 14, TypeScript, and Tailwind CSS. 
 ## What's in here
 
 ```
-fcp-app/
+pluggo/
 ├── app/
 │   ├── api/chat/route.ts   # Chat API (replace with a real LLM)
 │   ├── globals.css
@@ -38,7 +38,7 @@ That's it. No mobile toolchains required — this is a normal web app.
 Open Terminal and run:
 
 ```bash
-cd fcp-app
+cd pluggo
 npm install
 npm run dev
 ```
@@ -52,7 +52,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser. To preview 
 Open **PowerShell** or **Command Prompt** and run:
 
 ```powershell
-cd fcp-app
+cd pluggo
 npm install
 npm run dev
 ```
@@ -80,8 +80,8 @@ Open [http://localhost:3000](http://localhost:3000). To stop: `Ctrl+C`, then `do
 ### Plain docker
 
 ```bash
-docker build -t fcp-app .
-docker run --rm -p 3000:3000 fcp-app
+docker build -t pluggo .
+docker run --rm -p 3000:3000 pluggo
 ```
 
 ### Pinning a different Node 24 patch version
@@ -89,7 +89,7 @@ docker run --rm -p 3000:3000 fcp-app
 The `Dockerfile` defaults to `node:24-alpine` (latest 24.x). To pin a specific version:
 
 ```bash
-docker build --build-arg NODE_VERSION=24.0.0-alpine -t fcp-app .
+docker build --build-arg NODE_VERSION=24.0.0-alpine -t pluggo .
 ```
 
 Or change `NODE_VERSION` in `docker-compose.yml`.
@@ -99,7 +99,7 @@ Or change `NODE_VERSION` in `docker-compose.yml`.
 Create a `.env.local` file with your secrets, then uncomment the `env_file` block in `docker-compose.yml`. For plain `docker run`, pass them with `-e`:
 
 ```bash
-docker run --rm -p 3000:3000 -e OPENAI_API_KEY=sk-... fcp-app
+docker run --rm -p 3000:3000 -e OPENAI_API_KEY=sk-... pluggo
 ```
 
 ---
@@ -109,7 +109,7 @@ docker run --rm -p 3000:3000 -e OPENAI_API_KEY=sk-... fcp-app
 1. Push this folder to a GitHub repo.
 2. Go to [vercel.com/new](https://vercel.com/new) → "Import Git Repository" → select the repo.
 3. Vercel auto-detects Next.js. Click **Deploy** — no settings to change.
-4. You'll get a public URL like `fcp-app.vercel.app`. Share that with judges.
+4. You'll get a public URL like `pluggo.vercel.app`. Share that with judges.
 
 The free **Hobby** tier is plenty for a hackathon demo — no credits or payment needed.
 

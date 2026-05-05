@@ -4,8 +4,8 @@ services:
       context: .
       args:
         NODE_VERSION: 24-alpine
-    image: fcp-app:latest
-    container_name: fcp-app
+    image: pluggo:latest
+    container_name: pluggo
     ports:
       - "3000:3000"
     restart: unless-stopped

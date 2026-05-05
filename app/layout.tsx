@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'DriverCharge — EV chargers near you',
+  title: 'Pluggo — EV chargers near you',
   description:
     'Find the closest EV charging stations and get directions in Google Maps or Waze.',
 };
