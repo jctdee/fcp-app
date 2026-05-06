@@ -159,6 +159,10 @@ async function readBodyWithCap(
 // 1. CHAT_ALLOWED_ORIGINS — comma-separated list, server-only, supports
 //    multiple production/preview origins.
 // 2. NEXT_PUBLIC_SITE_URL — single origin, common Next.js convention.
+// 3. VERCEL_URL + VERCEL_BRANCH_URL — auto-injected by Vercel on every
+//    deployment. Only consulted when VERCEL_ENV=preview, so each PR's
+//    preview deploy auto-allows itself without manual env-var edits.
+//    Production deploys are unaffected — VERCEL_ENV=production skips this.
 // In dev/test (NODE_ENV !== 'production') we also accept localhost and
 // quick-tunnel cloudflared subdomains so the app is testable on phone over
 // the tunnel without extra config. In production these conveniences are off
@@ -180,6 +184,12 @@ function getConfiguredOrigins(): string[] {
   }
   const single = process.env.NEXT_PUBLIC_SITE_URL;
   if (single) out.add(single);
+  if (process.env.VERCEL_ENV === 'preview') {
+    const vercelUrl = process.env.VERCEL_URL;
+    if (vercelUrl) out.add(`https://${vercelUrl}`);
+    const vercelBranchUrl = process.env.VERCEL_BRANCH_URL;
+    if (vercelBranchUrl) out.add(`https://${vercelBranchUrl}`);
+  }
   return [...out];
 }
 

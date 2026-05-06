@@ -1239,3 +1239,68 @@ describe('/api/chat — required env vars', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe('/api/chat — Vercel preview origin auto-allow', () => {
+  // Vercel injects VERCEL_URL (per-deploy hostname) and VERCEL_BRANCH_URL
+  // (stable per-branch alias) on every deployment. When VERCEL_ENV=preview
+  // the route should auto-allow them so PR previews work without needing
+  // CHAT_ALLOWED_ORIGINS edits per branch. Production deploys
+  // (VERCEL_ENV=production) must NOT get this auto-allow — operators should
+  // set production hostnames explicitly via CHAT_ALLOWED_ORIGINS.
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it.each([
+    {
+      name: 'VERCEL_URL',
+      envVar: 'VERCEL_URL',
+      host: 'pluggo-abc123-jctdee.vercel.app',
+    },
+    {
+      name: 'VERCEL_BRANCH_URL',
+      envVar: 'VERCEL_BRANCH_URL',
+      host: 'pluggo-git-fix-foo-jctdee.vercel.app',
+    },
+  ])('preview: $name auto-allows requests from https://$host', async ({ envVar, host }) => {
+    vi.stubEnv('VERCEL_ENV', 'preview');
+    vi.stubEnv(envVar, host);
+    fetchMock.mockResolvedValueOnce(endTurn('OK.'));
+
+    const res = await post(
+      { driverMessage: 'hi', priorTurns: [], position: POS, carId: 'any' },
+      { headers: { origin: `https://${host}` } },
+    );
+
+    expect(res.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it('preview: unrelated *.vercel.app origin is rejected even with VERCEL_URL set', async () => {
+    vi.stubEnv('VERCEL_ENV', 'preview');
+    vi.stubEnv('VERCEL_URL', 'pluggo-abc123-jctdee.vercel.app');
+
+    const res = await post(
+      { driverMessage: 'hi', priorTurns: [], position: POS, carId: 'any' },
+      { headers: { origin: 'https://attacker.vercel.app' } },
+    );
+
+    expect(res.status).toBe(403);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('production: VERCEL_URL is NOT auto-allowed (operators must use CHAT_ALLOWED_ORIGINS)', async () => {
+    vi.stubEnv('VERCEL_ENV', 'production');
+    vi.stubEnv('VERCEL_URL', 'pluggo-prod.vercel.app');
+    vi.stubEnv('CHAT_ALLOWED_ORIGINS', '');
+    vi.stubEnv('NEXT_PUBLIC_SITE_URL', '');
+
+    const res = await post(
+      { driverMessage: 'hi', priorTurns: [], position: POS, carId: 'any' },
+      { headers: { origin: 'https://pluggo-prod.vercel.app' } },
+    );
+
+    expect(res.status).toBe(403);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
