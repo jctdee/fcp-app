@@ -25,9 +25,18 @@ import { PrimaryStationTracker } from '@/lib/chatbot/primary-station';
 
 export const runtime = 'edge';
 
-const MODEL = 'claude-haiku-4-5-20251001';
-const MAX_TOKENS = 512;
-const MAX_TOOL_ITERATIONS = 5;
+// Model + cost-shape defaults. Override per-deploy via env (CHAT_MODEL,
+// CHAT_MAX_TOKENS, CHAT_MAX_TOOL_ITERATIONS). Read once at module load —
+// Edge runtime evaluates this on each cold start, so a redeploy is enough
+// to pick up new values, no restart needed.
+function envInt(raw: string | undefined, fallback: number): number {
+  if (!raw) return fallback;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+const MODEL = process.env.CHAT_MODEL ?? 'claude-haiku-4-5-20251001';
+const MAX_TOKENS = envInt(process.env.CHAT_MAX_TOKENS, 512);
+const MAX_TOOL_ITERATIONS = envInt(process.env.CHAT_MAX_TOOL_ITERATIONS, 5);
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
 
