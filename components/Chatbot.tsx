@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { CARS } from '@/lib/cars';
-import { speak } from '@/lib/speak';
+import { primeSpeech, speak } from '@/lib/speak';
 import { useSpeechRecognition } from '@/lib/useSpeechRecognition';
 import {
   normalizeOverridesForWire,
@@ -213,11 +213,14 @@ export default function Chatbot({
   function toggleSpeakReplies() {
     if (speakReplies && typeof window !== 'undefined') {
       window.speechSynthesis?.cancel();
+    } else {
+      primeSpeech();
     }
     setSpeakReplies((s) => !s);
   }
 
   function toggleMic() {
+    primeSpeech();
     if (!speech.supported) {
       setMicNotice(
         "Voice input isn't supported in this browser — try Chrome on desktop, or type your message instead.",
@@ -234,7 +237,10 @@ export default function Chatbot({
       <button
         type="button"
         aria-label={open ? 'Close chat' : 'Open chat'}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          primeSpeech();
+          setOpen((o) => !o);
+        }}
         className={`fixed bottom-5 right-5 z-40 h-14 w-14 items-center justify-center rounded-full bg-brand-500 text-ink-900 shadow-lg shadow-brand-600/40 transition hover:bg-brand-600 active:scale-95 sm:bottom-8 sm:right-8 ${open ? 'hidden' : 'flex'}`}
       >
         {open ? <CloseIcon /> : <ChatIcon />}
@@ -320,6 +326,7 @@ export default function Chatbot({
           <form
             onSubmit={(e) => {
               e.preventDefault();
+              primeSpeech();
               void handleSubmit(input);
             }}
             className="flex items-center gap-2 border-t border-ink-800 px-3 py-3"
