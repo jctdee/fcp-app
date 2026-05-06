@@ -1,36 +1,22 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { CARS, isStationCompatible } from '@/lib/cars';
-import { classifyIntent } from '@/lib/intent';
+import { CARS } from '@/lib/cars';
 import { speak } from '@/lib/speak';
-import {
-  googleMapsDirectionsUrl,
-  wazeDirectionsUrl,
-} from '@/lib/stations';
 import { useSpeechRecognition } from '@/lib/useSpeechRecognition';
-import type {
-  Announcement,
-  Position,
-  StationWithDistance,
-} from './AppShell';
-
-type Action = { label: string; href: string };
+import {
+  normalizeOverridesForWire,
+  type StationOverride,
+} from '@/lib/chatbot/overrides';
+import { isChatResponse, type Action } from '@/lib/chatbot/response';
+import type { Announcement, Position } from './AppShell';
 
 type Message = {
   id: string;
   role: 'user' | 'bot';
   text: string;
-  action?: Action;
   actions?: Action[];
 };
-
-function parseMapChoice(text: string): 'google' | 'waze' | null {
-  const t = text.toLowerCase();
-  if (/\bwaze\b/.test(t)) return 'waze';
-  if (/\b(google|gmaps?|maps?)\b/.test(t)) return 'google';
-  return null;
-}
 
 // Detect "I drive a [car]" / "my car is X" / "I have a [car]" patterns.
 // Returns the matching car id from CARS, or null.
@@ -47,28 +33,29 @@ function parseCarMention(text: string): string | null {
   return null;
 }
 
+const WELCOME_ID = 'welcome';
 const initialMessages: Message[] = [
   {
-    id: 'welcome',
+    id: WELCOME_ID,
     role: 'bot',
     text:
-      "Hey! Tell me your car (\"I drive a GreenGSM\") then ask \"what's the nearest station?\" — or say \"guide me to BGC High Street\" and I'll ask Google Maps or Waze.",
+      "Hey! Tell me your car (\"I drive a GreenGSM\") then ask \"what's the nearest station?\" — or say \"guide me to BGC High Street\".",
   },
 ];
 
 type Props = {
   position: Position | null;
-  allStations: StationWithDistance[];
   carId: string;
   onCarChange: (id: string) => void;
+  overrides: Record<string, StationOverride>;
   announcement?: Announcement | null;
 };
 
 export default function Chatbot({
   position,
-  allStations,
   carId,
   onCarChange,
+  overrides,
   announcement,
 }: Props) {
   const [open, setOpen] = useState(false);
@@ -76,25 +63,31 @@ export default function Chatbot({
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [speakReplies, setSpeakReplies] = useState(true);
-  const [pendingNav, setPendingNav] = useState<StationWithDistance | null>(null);
   const [micNotice, setMicNotice] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Keep latest stations/position/pending-nav/car in refs so the speech callback always reads fresh values.
-  const allStationsRef = useRef(allStations);
+  // Latest values exposed via refs so the speech-recognition callback (set up
+  // once) always reads fresh state at call time.
   const positionRef = useRef(position);
-  const pendingNavRef = useRef(pendingNav);
   const carIdRef = useRef(carId);
+  const overridesRef = useRef(overrides);
+  const announcementRef = useRef(announcement);
+  const messagesRef = useRef(messages);
   useEffect(() => {
-    allStationsRef.current = allStations;
     positionRef.current = position;
-  }, [allStations, position]);
-  useEffect(() => {
-    pendingNavRef.current = pendingNav;
-  }, [pendingNav]);
+  }, [position]);
   useEffect(() => {
     carIdRef.current = carId;
   }, [carId]);
+  useEffect(() => {
+    overridesRef.current = overrides;
+  }, [overrides]);
+  useEffect(() => {
+    announcementRef.current = announcement;
+  }, [announcement]);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   const speech = useSpeechRecognition({
     onFinal: (text) => {
@@ -109,8 +102,6 @@ export default function Chatbot({
     });
   }, [messages, open, speech.transcript]);
 
-  // Live state refs so the announcement effect can read current values without
-  // re-firing whenever they change.
   const speakRepliesRef = useRef(speakReplies);
   const listeningRef = useRef(speech.listening);
   useEffect(() => {
@@ -120,8 +111,7 @@ export default function Chatbot({
     listeningRef.current = speech.listening;
   }, [speech.listening]);
 
-  // Auto-prompt: when AppShell pushes a new announcement, append it to the
-  // conversation and (if conditions allow) speak it aloud.
+  // Auto-prompt: append + speak each new announcement bubble.
   useEffect(() => {
     if (!announcement) return;
     setMessages((prev) => {
@@ -135,8 +125,6 @@ export default function Chatbot({
         },
       ];
     });
-    // Don't barge in over the user's voice input. Don't speak if muted.
-    // Speak even if the panel is closed — a heads-up is still useful audio.
     if (speakRepliesRef.current && !listeningRef.current) {
       speak(announcement.text);
     }
@@ -156,109 +144,60 @@ export default function Chatbot({
     setSending(true);
 
     const announce = (reply: string) => {
-      if (speakReplies) speak(reply);
+      if (speakRepliesRef.current) speak(reply);
     };
 
-    // 0. If we asked the driver "Google Maps or Waze?", resolve their answer.
-    const pending = pendingNavRef.current;
-    if (pending) {
-      const choice = parseMapChoice(text);
-      if (choice) {
-        const url =
-          choice === 'waze'
-            ? wazeDirectionsUrl(pending.lat, pending.lng)
-            : googleMapsDirectionsUrl(pending.lat, pending.lng);
-        const appName = choice === 'waze' ? 'Waze' : 'Google Maps';
-        const replyText = `Opening ${appName} directions to ${pending.name}.`;
-        const botMsg: Message = {
-          id: crypto.randomUUID(),
-          role: 'bot',
-          text: replyText,
-          actions: [{ label: `Open ${appName}`, href: url }],
-        };
-        setMessages((prev) => [...prev, botMsg]);
-        announce(replyText);
-        try {
-          window.open(url, '_blank', 'noopener,noreferrer');
-        } catch {
-          /* swallowed — fallback button handles it */
-        }
-        setPendingNav(null);
-        setSending(false);
-        return;
-      }
-      setPendingNav(null);
-    }
-
-    // 1. Did the driver mention their car? ("I drive a GreenGSM…")
+    // Local UX-only step: if the driver mentioned a car, switch the active
+    // car immediately so the UI list filter updates this turn AND the new
+    // carId is sent to Claude alongside the message.
     const carMention = parseCarMention(text);
-    const carChanged = carMention !== null && carMention !== carIdRef.current;
-    if (carChanged) onCarChange(carMention!);
     const activeCarId = carMention ?? carIdRef.current;
+    const carChanged = carMention !== null && carMention !== carIdRef.current;
+    if (carChanged) onCarChange(carMention);
     const activeCar = CARS.find((c) => c.id === activeCarId) ?? CARS[0];
 
-    // 2. Filter the station list to the (possibly newly-selected) car.
-    const filteredStations = allStationsRef.current.filter((s) =>
-      isStationCompatible(s.connectors, activeCar.connectors),
-    );
+    // Build the prior-turn transcript from current messages, dropping the
+    // welcome bubble and the just-appended user turn (which is sent as
+    // driverMessage instead). Last 10 only — server caps the same.
+    const priorTurns = messagesRef.current
+      .filter((m) => m.id !== WELCOME_ID)
+      .slice(-10)
+      .map((m) => ({
+        speaker: m.role === 'user' ? ('driver' as const) : ('bot' as const),
+        text: m.text,
+      }));
 
-    // 3. Try local intent matching on the car-filtered list.
-    const local = classifyIntent(
-      text,
-      filteredStations,
-      positionRef.current !== null,
-    );
-
-    if (local) {
-      const replyText = carChanged
-        ? `Filtering for your ${activeCar.label}. ${local.reply}`
-        : local.reply;
-      const botMsg: Message = {
-        id: crypto.randomUUID(),
-        role: 'bot',
-        text: replyText,
-        action: local.action,
-        actions: local.actions,
-      };
-      setMessages((prev) => [...prev, botMsg]);
-      announce(replyText);
-
-      if (local.pendingNav) {
-        const station = filteredStations.find(
-          (s) => s.id === local.pendingNav!.stationId,
-        );
-        if (station) setPendingNav(station);
-      }
-
-      setSending(false);
-      return;
-    }
-
-    // 3b. Car mentioned but no specific question — acknowledge the filter change.
-    if (carChanged) {
-      const ack = `Got it — filtering chargers for your ${activeCar.label}. Ask me about the nearest, cheapest, or fastest.`;
-      setMessages((prev) => [
-        ...prev,
-        { id: crypto.randomUUID(), role: 'bot', text: ack },
-      ]);
-      announce(ack);
-      setSending(false);
-      return;
-    }
-
-    // 2. Fallback to the chat API for off-script questions.
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({
+          driverMessage: text,
+          priorTurns,
+          position: positionRef.current,
+          carId: activeCarId,
+          overrides: normalizeOverridesForWire(overridesRef.current),
+          latestAnnouncement: announcementRef.current?.text,
+        }),
       });
-      const data = (await res.json()) as { reply: string };
+      const raw: unknown = await res.json();
+      // Throw on shape mismatch so the existing catch below shows the
+      // generic "something went wrong" message. Never render unvalidated
+      // action hrefs onto the page.
+      if (!isChatResponse(raw)) throw new Error('invalid_chat_response');
+      const replyText = carChanged
+        ? `Filtering for your ${activeCar.label}. ${raw.reply}`
+        : raw.reply;
       setMessages((prev) => [
         ...prev,
-        { id: crypto.randomUUID(), role: 'bot', text: data.reply },
+        {
+          id: crypto.randomUUID(),
+          role: 'bot',
+          text: replyText,
+          actions: raw.actions,
+        },
       ]);
-      announce(data.reply);
+      announce(replyText);
     } catch {
       const fallback = 'Sorry — something went wrong reaching the server.';
       setMessages((prev) => [
@@ -354,7 +293,7 @@ export default function Chatbot({
                 key={m.id}
                 role={m.role}
                 text={m.text}
-                actions={m.actions ?? (m.action ? [m.action] : undefined)}
+                actions={m.actions}
               />
             ))}
             {sending && <Bubble role="bot" text="…" />}

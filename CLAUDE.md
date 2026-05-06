@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Pluggo is a hackathon prototype: a mobile-first Next.js 14 (App Router) app that helps EV drivers in Metro Manila find the nearest charging station, with a floating "Pluggobot" chat panel. The chatbot is currently rule-based + an echo API stub; the real LLM backend is not wired up yet (see "Wiring the chatbot" below). Pure TS helpers for the upcoming Claude wiring live in `lib/chatbot/`. Hackathon test scope: tests target the `/api/chat` route handler (the chatbot itself), not per-helper unit logic.
+Pluggo is a hackathon prototype: a mobile-first Next.js 14 (App Router) app that helps EV drivers in Metro Manila find the nearest charging station, with a floating "Pluggobot" chat panel. The chatbot is wired to Claude via the Anthropic Messages API with two server-side tools (`find_stations`, `get_directions`); helpers live under `lib/chatbot/`. Hackathon test scope: tests target the `/api/chat` route handler, not per-helper unit logic.
 
 ## Commands
 
@@ -33,14 +33,12 @@ If you find yourself filtering stations a third way, prefer pushing the logic in
 
 ### Chatbot pipeline (`components/Chatbot.tsx::handleSubmit`)
 
-Order of operations on every user message — earlier steps short-circuit the rest:
+Order of operations on every user message:
 
-1. **Resolve pending nav** — if a previous bot turn asked "Google Maps or Waze?", `parseMapChoice` resolves the answer and opens the directions URL.
-2. **Parse car mention** — `parseCarMention` looks for "I drive a X" / "GreenGSM" / "Tesla" / etc. and calls `onCarChange`. The new car is applied to the same turn's station filter.
-3. **Local intent match** — `lib/intent.ts::classifyIntent` is a regex-based classifier covering nearest, cheapest, fastest, available, price, wait, ETA, and directions. Returns `IntentReply | null`. Reply may include a `pendingNav` to set up the next turn.
-4. **Fallback to `/api/chat`** — only reached when the local matcher returns `null`.
+1. **Parse car mention** — `parseCarMention` looks for "I drive a X" / "GreenGSM" / "Tesla" / etc. and calls `onCarChange`. The new car is applied to the same turn's UI filter and is sent to Claude as `carId`.
+2. **POST `/api/chat`** — the entire conversation goes to Claude. The body carries `driverMessage`, `priorTurns` (last 10), `position`, `carId`, sanitized `overrides`, and the most recent `latestAnnouncement` text. Claude orchestrates `find_stations` / `get_directions` tools; the route attaches Maps + Waze action buttons deterministically.
 
-When extending the bot, prefer adding a branch in `classifyIntent` over expanding the API fallback — local matching is deterministic and works offline.
+When extending the bot, prefer making the model smarter (system prompt, tool inputs, server-side tool execution) over branching client-side. Anything client-side is UX glue only — the model owns the conversation.
 
 ### Auto-prompt loop (Demo Mode)
 
@@ -59,7 +57,7 @@ When extending the bot, prefer adding a branch in `classifyIntent` over expandin
 
 ### Chat API
 
-`app/api/chat/route.ts` runs on the Edge runtime (`export const runtime = 'edge'`) and currently echoes the message. The plan recorded in auto-memory is to wire this to the **Claude API** (not AWS Lex) using `@anthropic-ai/sdk` with tool use, streaming the response. Keep the request shape `{ message: string }` and the response shape `{ reply: string }` (or extend it with streaming chunks) so `Chatbot.handleSubmit` doesn't need to change. The Edge runtime is required to avoid Vercel Hobby's 10s function timeout on streaming responses; the `ANTHROPIC_API_KEY` env var is set in Vercel.
+`app/api/chat/route.ts` runs on the Edge runtime (`export const runtime = 'edge'`) and calls the Anthropic Messages API directly via `fetch` (the official `@anthropic-ai/sdk` pulls `node:fs` via its credential-chain module and isn't Edge-compatible). The model id, max output tokens, and max tool-use iterations are server-controlled and **required** — `CHAT_MODEL`, `CHAT_MAX_TOKENS`, `CHAT_MAX_TOOL_ITERATIONS` env vars with NO in-source defaults, so the public repo never advertises which model tier or limits are in use. Missing or invalid values fail closed to the same generic 200 reply used for upstream errors (the failure mode never reveals which var is unset). Never accept these from client input. Two tools are exposed — `find_stations` and `get_directions` — both executed server-side against canonical `STATIONS` data. Action buttons (Maps + Waze) are attached deterministically based on the first tool result that returned a station; not parsed from the reply text. Per-IP throttle is best-effort (20/min); the workspace-level spend cap is the real ceiling. `ANTHROPIC_API_KEY` is read from env; missing key returns the same generic 200 reply. Origin/Referer allowlist via `CHAT_ALLOWED_ORIGINS` (csv) or `NEXT_PUBLIC_SITE_URL`; in dev (`NODE_ENV != 'production'`) localhost and `*.trycloudflare.com` are also accepted. Trust boundary: client-supplied `overrides` are whitelist-sanitized to `{available, status, waitMinutes, total}` against known station ids — names, coords, prices come from server only.
 
 ### `lib/chatbot/` — pure TS helpers for the Claude wiring
 
@@ -90,7 +88,11 @@ These modules encode the safety invariants for the future `/api/chat` route. The
 
 - **No `for`/`forEach` loops in test bodies.** They hide what's being parameterized and produce poor failure output (one assertion failure stops the whole test). Two acceptable replacements depending on shape:
   - **Fixed table of cases** (e.g. "for each `rank_by` value, the result is sorted"): use `it.each` / `describe.each`. Each row becomes a discrete test with its own name and failure trace.
-  - **Invariant across runtime-collected data** (e.g. "every call to Claude must use Haiku 4.5"): use array-level matchers — `[...new Set(arr)]` for distinctness, `Math.min`/`Math.max` for bounds, or `expect(arr).toEqual(arr.map(() => matcher))` to assert every entry matches the same shape. The mismatched index shows up in the diff.
+  - **Invariant across runtime-collected data** (e.g. "every call to Claude must use the configured model"): use array-level matchers — `[...new Set(arr)]` for distinctness, `Math.min`/`Math.max` for bounds, or `expect(arr).toEqual(arr.map(() => matcher))` to assert every entry matches the same shape. The mismatched index shows up in the diff.
 - **Always assert the loop body actually ran.** When iterating over runtime-collected data (mock calls, accumulated events), check `expect(arr.length).toBeGreaterThan(0)` before iterating — otherwise an empty array passes vacuously and the test gives false confidence.
+- **No `try`/`catch` or `.catch()` in test bodies.** Let assertions throw naturally — the framework's stack trace and diff are the signal. Three acceptable replacements:
+  - **Assert a function throws**: `expect(fn).toThrow()` (sync) or `await expect(fn()).rejects.toThrow()` (async). Pass a matcher to assert the message.
+  - **Assert a function does NOT throw**: just call it. A real throw fails the test with a real stack trace — better than a `try`/`catch` that hides the error type.
+  - **Setup/teardown that needs guaranteed cleanup**: use `beforeEach`/`afterEach` hooks or framework helpers (`vi.stubEnv` + `vi.unstubAllEnvs`, `vi.spyOn(...).mockRestore()`, etc.). Hooks run even when the test throws — `try`/`finally` in the body is never the right answer.
 - **Tests scope mirrors the source it covers.** Route tests live next to the route (`app/api/chat/route.test.ts`); helper tests live next to the helper (`lib/foo.test.ts`). Vitest's `include` glob picks both up.
-- **Mock at the network boundary, not below.** For `/api/chat`, mock `@anthropic-ai/sdk`'s `messages.create` once at the top of the test file. Don't mock individual helpers — exercise them through the route so the integration is real.
+- **Mock at the network boundary, not below.** For `/api/chat`, mock global `fetch` (the route uses fetch directly since the official `@anthropic-ai/sdk` isn't Edge-compatible) once at the top of the test file. Don't mock individual helpers — exercise them through the route so the integration is real.

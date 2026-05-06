@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { CARS, isStationCompatible } from '@/lib/cars';
 import { DEMO_TIMELINE } from '@/lib/demoTimeline';
 import { STATIONS, haversineKm, type Station } from '@/lib/stations';
+import type { StationOverride } from '@/lib/chatbot/overrides';
 import Chatbot from './Chatbot';
 import StationList from './StationList';
 
@@ -11,7 +12,7 @@ export type Position = { lat: number; lng: number; label?: string };
 export type StationWithDistance = Station & { distanceKm: number };
 export type Announcement = { id: string; text: string };
 
-type Overrides = Record<string, Partial<Station>>;
+type Overrides = Record<string, StationOverride>;
 
 export default function AppShell() {
   const [position, setPosition] = useState<Position | null>(null);
@@ -114,9 +115,9 @@ export default function AppShell() {
       />
       <Chatbot
         position={position}
-        allStations={allStations}
         carId={carId}
         onCarChange={setCarId}
+        overrides={overrides}
         announcement={announcement}
       />
     </>
