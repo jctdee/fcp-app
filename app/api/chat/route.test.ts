@@ -4,6 +4,7 @@ import {
   it,
   expect,
   beforeEach,
+  afterEach,
   beforeAll,
   afterAll,
 } from 'vitest';
@@ -1070,51 +1071,46 @@ describe('/api/chat — public-endpoint hardening', () => {
 });
 
 describe('/api/chat — required env vars', () => {
-  // Each case unsets one required env var, asserts the route returns the
-  // generic 200 reply WITHOUT calling fetch (the failure mode never reveals
-  // which var is missing — same copy used for upstream errors), then restores
-  // for the next test. The model id and limits never appear in source — if
-  // env wiring breaks, every request silently fails closed instead of
-  // falling back to a baked-in default.
+  // Each case stubs one required env var to a missing/invalid value via
+  // vi.stubEnv (auto-restored by vi.unstubAllEnvs in afterEach — no
+  // try/finally in test bodies). The route must return the generic 200
+  // reply WITHOUT calling fetch — same copy as missing api key so the
+  // failure mode never reveals which var is unset.
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it.each([
-    ['CHAT_MODEL', () => process.env.CHAT_MODEL, (v: string) => { process.env.CHAT_MODEL = v; }],
-    ['CHAT_MAX_TOKENS', () => process.env.CHAT_MAX_TOKENS, (v: string) => { process.env.CHAT_MAX_TOKENS = v; }],
-    ['CHAT_MAX_TOOL_ITERATIONS', () => process.env.CHAT_MAX_TOOL_ITERATIONS, (v: string) => { process.env.CHAT_MAX_TOOL_ITERATIONS = v; }],
-  ])('missing %s returns generic 200 reply without calling Claude', async (_name, get, set) => {
-    const original = get();
-    delete process.env[_name];
-    try {
-      const res = await post({
-        driverMessage: 'hi',
-        priorTurns: [],
-        position: POS,
-        carId: 'any',
-      });
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.reply).toMatch(/having trouble/i);
-      expect(fetchMock).not.toHaveBeenCalled();
-    } finally {
-      if (original !== undefined) set(original);
-    }
+    'CHAT_MODEL',
+    'CHAT_MAX_TOKENS',
+    'CHAT_MAX_TOOL_ITERATIONS',
+  ])('missing %s returns generic 200 reply without calling Claude', async (name) => {
+    vi.stubEnv(name, '');
+
+    const res = await post({
+      driverMessage: 'hi',
+      priorTurns: [],
+      position: POS,
+      carId: 'any',
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.reply).toMatch(/having trouble/i);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('CHAT_MAX_TOKENS=non-integer is treated as missing', async () => {
-    const original = process.env.CHAT_MAX_TOKENS;
-    process.env.CHAT_MAX_TOKENS = 'not-a-number';
-    try {
-      const res = await post({
-        driverMessage: 'hi',
-        priorTurns: [],
-        position: POS,
-        carId: 'any',
-      });
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.reply).toMatch(/having trouble/i);
-      expect(fetchMock).not.toHaveBeenCalled();
-    } finally {
-      if (original !== undefined) process.env.CHAT_MAX_TOKENS = original;
-    }
+    vi.stubEnv('CHAT_MAX_TOKENS', 'not-a-number');
+
+    const res = await post({
+      driverMessage: 'hi',
+      priorTurns: [],
+      position: POS,
+      carId: 'any',
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.reply).toMatch(/having trouble/i);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
