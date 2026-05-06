@@ -209,12 +209,50 @@ type AnthropicMessage =
 
 type Action = { label: string; href: string };
 
-function isTextBlock(b: AnthropicContentBlock): b is AnthropicTextBlock {
-  return b.type === 'text';
+// Names of the tools we expose to Claude. Anything else the model invents is
+// treated as unknown_tool and never reaches the primary-station tracker. The
+// type guard lets us narrow `block.name: string` to this union without an
+// `as` cast in the tool loop.
+type KnownToolName = 'find_stations' | 'get_directions';
+
+function isKnownToolName(name: string): name is KnownToolName {
+  return name === 'find_stations' || name === 'get_directions';
 }
 
-function isToolUseBlock(b: AnthropicContentBlock): b is AnthropicToolUseBlock {
-  return b.type === 'tool_use';
+function isRecord(x: unknown): x is Record<string, unknown> {
+  return x !== null && typeof x === 'object' && !Array.isArray(x);
+}
+
+function isTextBlock(b: unknown): b is AnthropicTextBlock {
+  return isRecord(b) && b.type === 'text' && typeof b.text === 'string';
+}
+
+function isToolUseBlock(b: unknown): b is AnthropicToolUseBlock {
+  return (
+    isRecord(b) &&
+    b.type === 'tool_use' &&
+    typeof b.id === 'string' &&
+    typeof b.name === 'string' &&
+    'input' in b
+  );
+}
+
+function isContentBlock(b: unknown): b is AnthropicContentBlock {
+  return isTextBlock(b) || isToolUseBlock(b);
+}
+
+// Narrow runtime validation of the Messages API response. We only care about
+// the two fields the route consumes (content + stop_reason) — leaving the
+// rest of the upstream shape unconstrained avoids breaking on harmless
+// additions and keeps the boundary small. Validation failure throws a
+// generic error that the POST catch-all turns into a sanitized 200 reply.
+function isAnthropicResponse(x: unknown): x is AnthropicResponse {
+  return (
+    isRecord(x) &&
+    typeof x.stop_reason === 'string' &&
+    Array.isArray(x.content) &&
+    x.content.every(isContentBlock)
+  );
 }
 
 function carLabelFor(carId: string): string {
@@ -254,7 +292,14 @@ async function callAnthropic(
     // a sanitized 200 reply.
     throw new Error(`anthropic_http_${res.status}`);
   }
-  return (await res.json()) as AnthropicResponse;
+  const data: unknown = await res.json();
+  if (!isAnthropicResponse(data)) {
+    // Same pattern as the !res.ok branch — throw a generic, opaque error so
+    // the POST catch-all returns the sanitized "having trouble" reply
+    // without echoing any part of the malformed upstream body to the client.
+    throw new Error('anthropic_bad_response');
+  }
+  return data;
 }
 
 function executeTool(
@@ -395,18 +440,13 @@ export async function POST(req: Request) {
 
       const toolUses = resp.content.filter(isToolUseBlock);
       const toolResults = toolUses.map((block) => {
-        const isKnown =
-          block.name === 'find_stations' || block.name === 'get_directions';
         const result = executeTool(block.name, block.input, {
           position: validated.position,
           carId: validated.carId,
           view,
         });
-        if (isKnown) {
-          tracker.record(
-            block.name as 'find_stations' | 'get_directions',
-            result,
-          );
+        if (isKnownToolName(block.name)) {
+          tracker.record(block.name, result);
         }
         return {
           type: 'tool_result' as const,

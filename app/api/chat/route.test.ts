@@ -489,6 +489,48 @@ describe('/api/chat — security guardrails', () => {
     expect(body).not.toContain('api_key');
   });
 
+  it.each([
+    ['empty object', {}],
+    ['missing content', { stop_reason: 'end_turn' }],
+    ['missing stop_reason', { content: [{ type: 'text', text: 'hi' }] }],
+    ['content not an array', { stop_reason: 'end_turn', content: 'oops' }],
+    [
+      'content block of unknown type',
+      { stop_reason: 'end_turn', content: [{ type: 'image', url: 'x' }] },
+    ],
+    [
+      'tool_use block missing required fields',
+      { stop_reason: 'tool_use', content: [{ type: 'tool_use', name: 'x' }] },
+    ],
+  ])(
+    'malformed Anthropic response (%s) returns the generic 200 reply without leaking',
+    async (_name, malformed) => {
+      fetchMock.mockResolvedValueOnce(
+        new Response(JSON.stringify(malformed), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+
+      const res = await post({
+        driverMessage: 'hi',
+        priorTurns: [],
+        position: POS,
+        carId: 'any',
+      });
+
+      expect(fetchMock).toHaveBeenCalled();
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.reply).toMatch(/having trouble/i);
+      // The generic reply must not echo any part of the upstream body or
+      // mention the specific validation failure.
+      expect(JSON.stringify(body)).not.toContain('anthropic_bad_response');
+      expect(body.actions).toBeUndefined();
+      expect(body.focusStationId).toBeUndefined();
+    },
+  );
+
   it('client cannot forge assistant authority via priorTurns', async () => {
     fetchMock.mockResolvedValueOnce(endTurn('OK.'));
 
